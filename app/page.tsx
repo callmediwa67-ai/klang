@@ -143,6 +143,7 @@ export default function Home() {
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [itemTags, setItemTags] = useState<Tag[]>([]);
   const [newTagName, setNewTagName] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState("");
   const [modal, setModal] = useState<"item" | "profile" | null>(null);
@@ -276,6 +277,7 @@ export default function Home() {
     setHistory([]);
     setAttachments([]);
     setSelectedFile(null);
+    setCustomCategory("");
     setShowHistory(false);
     setConflict(null);
     setModal("item");
@@ -292,6 +294,7 @@ export default function Home() {
     setHistory([]);
     setAttachments([]);
     setSelectedFile(null);
+    setCustomCategory("");
     setShowHistory(false);
     setConflict(null);
     setModal("item");
@@ -354,8 +357,8 @@ export default function Home() {
       const item = await write(
         editing ? "PATCH" : "POST",
         editing
-          ? { id: editing.id, expectedVersion: editing.version, ...draft }
-          : draft,
+          ? { id: editing.id, expectedVersion: editing.version, ...draft, category: customCategory.trim() || draft.category }
+          : { ...draft, category: customCategory.trim() || draft.category },
       );
       if (!item) throw new Error("บันทึกไม่สำเร็จ");
       if (selectedFile && profile) {
@@ -1034,6 +1037,10 @@ export default function Home() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="field">
+                  <span>หรือสร้างหมวดใหม่</span>
+                  <input value={customCategory} maxLength={40} onChange={(event) => setCustomCategory(event.target.value)} placeholder="เช่น ลูกค้า, การตลาด, Sprint 1" />
                 </label>
                 {error ? <p className="form-error">{error}</p> : null}
                 {editing ? (
