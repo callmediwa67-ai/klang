@@ -12,6 +12,7 @@ import {
 
 type ItemType = "note" | "link" | "document";
 type ViewName = "inbox" | "library" | "favorites" | "trash" | "activity";
+type ThemePreference = "system" | "light" | "dark";
 type Profile = {
   version: 1;
   deviceId: string;
@@ -77,6 +78,7 @@ type Draft = {
   category: string;
 };
 const profileKey = "klang_profile_v1";
+const themeKey = "klang_theme_v1";
 const emptyDraft: Draft = {
   type: "note",
   title: "",
@@ -128,6 +130,7 @@ function actor(profile: Profile) {
 
 export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
   const [profileForm, setProfileForm] = useState({ name: "", team: "" });
   const [items, setItems] = useState<VaultItem[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -220,6 +223,18 @@ export default function Home() {
       setLoading(false);
     }
   }, []);
+  useEffect(() => {
+    const saved = localStorage.getItem(themeKey);
+    if (saved === "light" || saved === "dark" || saved === "system") setThemePreference(saved);
+  }, []);
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => { document.documentElement.dataset.theme = themePreference === "system" ? (media.matches ? "dark" : "light") : themePreference; };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [themePreference]);
+  function changeTheme(next: ThemePreference) { localStorage.setItem(themeKey, next); setThemePreference(next); }
   useEffect(() => {
     if (profile) void load(view);
   }, [profile, view, load]);
@@ -590,6 +605,11 @@ export default function Home() {
             />
             <kbd className="live-status" title={lastSyncedAt ? `ซิงก์ล่าสุด ${formatDate(lastSyncedAt)}` : "กำลังเชื่อมต่อข้อมูลสด"}>● Live</kbd>
           </label>
+          <div className="theme-picker" role="group" aria-label="รูปแบบสี">
+            <button className={themePreference === "light" ? "active" : ""} type="button" title="โหมดสว่าง" aria-label="โหมดสว่าง" onClick={() => changeTheme("light")}>☀</button>
+            <button className={themePreference === "system" ? "active" : ""} type="button" title="ตามการตั้งค่าระบบ" aria-label="ตามการตั้งค่าระบบ" onClick={() => changeTheme("system")}>◐</button>
+            <button className={themePreference === "dark" ? "active" : ""} type="button" title="โหมดมืด" aria-label="โหมดมืด" onClick={() => changeTheme("dark")}>☾</button>
+          </div>
           <button
             className="primary-button"
             type="button"
