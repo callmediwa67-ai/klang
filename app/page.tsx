@@ -144,6 +144,7 @@ export default function Home() {
   const [itemTags, setItemTags] = useState<Tag[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [customCategory, setCustomCategory] = useState("");
+  const [managedCategories, setManagedCategories] = useState<Array<{ name: string }>>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState("");
   const [modal, setModal] = useState<"item" | "profile" | null>(null);
@@ -212,6 +213,7 @@ export default function Home() {
   }, [modal]);
   useEffect(() => { if (!profile) return; const refresh = () => { void load(view); }; const timer = window.setInterval(refresh, 20_000); return () => window.clearInterval(timer); }, [profile, view, load]);
   useEffect(() => { if (!profile) return; void fetch("/api/collaboration", { cache: "no-store" }).then((response) => response.json()).then((data: { tags?: Tag[] }) => setAllTags(data.tags ?? [])).catch(() => undefined); }, [profile]);
+  useEffect(() => { if (!profile) return; void fetch("/api/categories", { cache: "no-store" }).then((response) => response.json()).then((data: { categories?: Array<{ name: string }> }) => setManagedCategories(data.categories ?? [])).catch(() => undefined); }, [profile]);
   const filtered = useMemo(
     () =>
       items.filter((item) => {
@@ -234,7 +236,7 @@ export default function Home() {
       }),
     [items, view, category, query],
   );
-  const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [items, draft.category]);
+  const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...managedCategories.map((category) => category.name), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [managedCategories, items, draft.category]);
   function toast(text: string) {
     setNotice(text);
     setTimeout(() => setNotice(""), 2600);
@@ -355,6 +357,7 @@ export default function Home() {
     setBusyId(editing?.id ?? "new");
     setError("");
     try {
+      if (customCategory.trim() && profile) { const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: customCategory, actor: actor(profile) }) }); const data = await response.json() as { category?: { name: string } }; if (data.category) setManagedCategories((current) => current.some((category) => category.name === data.category!.name) ? current : [...current, data.category!]); }
       const item = await write(
         editing ? "PATCH" : "POST",
         editing
