@@ -234,6 +234,7 @@ export default function Home() {
       }),
     [items, view, category, query],
   );
+  const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [items, draft.category]);
   function toast(text: string) {
     setNotice(text);
     setTimeout(() => setNotice(""), 2600);
@@ -546,7 +547,7 @@ export default function Home() {
                   >
                     ทั้งหมด
                   </button>
-                  {Object.entries(categories).map(([key, label]) => (
+                  {categoryOptions.map(([key, label]) => (
                     <button
                       key={key}
                       className={category === key ? "selected" : ""}
@@ -642,7 +643,7 @@ export default function Home() {
                               )
                             }
                           >
-                            {Object.entries(categories).map(([key, label]) => (
+                            {categoryOptions.map(([key, label]) => (
                               <option key={key} value={key}>
                                 {label}
                               </option>
@@ -1031,7 +1032,7 @@ export default function Home() {
                       }))
                     }
                   >
-                    {Object.entries(categories).map(([key, label]) => (
+                    {categoryOptions.map(([key, label]) => (
                       <option value={key} key={key}>
                         {label}
                       </option>
