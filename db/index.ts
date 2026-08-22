@@ -64,6 +64,11 @@ export async function ensureDatabase() {
       content_type TEXT NOT NULL, size INTEGER NOT NULL, uploaded_by_name TEXT NOT NULL, uploaded_by_team TEXT NOT NULL, created_at TEXT NOT NULL
     )`),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_attachments_item_created ON attachments (item_id, created_at)"),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS item_links (
+      id TEXT PRIMARY KEY NOT NULL, item_id TEXT NOT NULL, url TEXT NOT NULL,
+      sort_order INTEGER NOT NULL, created_at TEXT NOT NULL
+    )`),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_item_links_item_order ON item_links (item_id, sort_order)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT 'neutral', created_by_name TEXT NOT NULL, created_by_team TEXT NOT NULL, created_at TEXT NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS item_tags (item_id TEXT NOT NULL, tag_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (item_id, tag_id))"),
@@ -77,6 +82,7 @@ export async function ensureDatabase() {
     env.DB.prepare("UPDATE items SET version = 1 WHERE version IS NULL OR version < 1"),
     env.DB.prepare("UPDATE items SET created_by_name = 'KLANG', created_by_team = 'ทีม' WHERE created_by_name = ''"),
     env.DB.prepare("UPDATE items SET updated_by_name = created_by_name, updated_by_team = created_by_team WHERE updated_by_name = ''"),
+    env.DB.prepare("INSERT OR IGNORE INTO item_links (id, item_id, url, sort_order, created_at) SELECT 'legacy-' || id, id, url, 0, created_at FROM items WHERE type = 'link' AND trim(url) != ''"),
   ]);
   const categoryInfo = await env.DB.prepare("PRAGMA table_info(categories)").all<{ name: string }>();
   const categoryNames = new Set(categoryInfo.results.map((column) => column.name));

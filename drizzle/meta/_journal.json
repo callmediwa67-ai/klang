@@ -50,6 +50,13 @@
       "when": 1787434133157,
       "tag": "0006_gorgeous_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787440280287,
+      "tag": "0007_conscious_arclight",
+      "breakpoints": true
     }
   ]
 }

@@ -57,6 +57,7 @@ type Attachment = {
   uploadedByTeam: string;
   createdAt: string;
 };
+type ItemLink = { id: string; url: string; sortOrder: number };
 type Tag = { id: string; name: string; color: string };
 type Comment = { id: string; body: string; authorName: string; authorTeam: string; createdAt: string };
 type ManagedCategory = { id: string; name: string; sortOrder: number; itemCount: number };
@@ -142,6 +143,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [itemLinks, setItemLinks] = useState<ItemLink[]>([]);
+  const [linkInputs, setLinkInputs] = useState<string[]>([""]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [itemTags, setItemTags] = useState<Tag[]>([]);
@@ -237,10 +240,10 @@ export default function Home() {
         fetch(`/api/files?itemId=${encodeURIComponent(editing.id)}`, { cache: "no-store" }),
         fetch(`/api/collaboration?itemId=${encodeURIComponent(editing.id)}`, { cache: "no-store" }),
       ]);
-      const historyData = await historyResponse.json() as { item?: VaultItem; versions?: Version[] };
+      const historyData = await historyResponse.json() as { item?: VaultItem; versions?: Version[]; links?: ItemLink[] };
       const fileData = await filesResponse.json() as { attachments?: Attachment[] };
       const collaborationData = await collaborationResponse.json() as { tags?: Tag[]; comments?: Comment[] };
-      if (historyResponse.ok && historyData.item) { setEditing(historyData.item); setHistory(historyData.versions ?? []); }
+      if (historyResponse.ok && historyData.item) { setEditing(historyData.item); setHistory(historyData.versions ?? []); setItemLinks(historyData.links ?? (historyData.item.url ? [{ id: `legacy-${historyData.item.id}`, url: historyData.item.url, sortOrder: 0 }] : [])); }
       if (filesResponse.ok) setAttachments(fileData.attachments ?? []);
       if (collaborationResponse.ok) { setItemTags(collaborationData.tags ?? []); setComments(collaborationData.comments ?? []); }
     } catch { /* keep the currently readable version until the next live sync */ }
@@ -334,6 +337,8 @@ export default function Home() {
     setDraft({ ...emptyDraft, type });
     setHistory([]);
     setAttachments([]);
+    setItemLinks([]);
+    setLinkInputs([""]);
     setSelectedFiles([]);
     setCustomCategory("");
     setShowHistory(false);
@@ -352,6 +357,8 @@ export default function Home() {
     });
     setHistory([]);
     setAttachments([]);
+    setItemLinks([]);
+    setLinkInputs(item.type === "link" ? [item.url] : [""]);
     setSelectedFiles([]);
     setCustomCategory("");
     setShowHistory(false);
@@ -368,12 +375,12 @@ export default function Home() {
         }),
         fetch(`/api/collaboration?itemId=${encodeURIComponent(item.id)}`, { cache: "no-store" }),
       ]);
-      const data = (await historyResponse.json()) as { versions?: Version[] };
+      const data = (await historyResponse.json()) as { versions?: Version[]; links?: ItemLink[] };
       const fileData = (await filesResponse.json()) as {
         attachments?: Attachment[];
       };
       const collaborationData = (await collaborationResponse.json()) as { tags?: Tag[]; comments?: Comment[] };
-      if (historyResponse.ok) setHistory(data.versions ?? []);
+      if (historyResponse.ok) { setHistory(data.versions ?? []); setItemLinks(data.links ?? (item.url ? [{ id: `legacy-${item.id}`, url: item.url, sortOrder: 0 }] : [])); setLinkInputs((data.links?.map((link) => link.url) ?? [item.url]).filter(Boolean)); }
       if (filesResponse.ok) setAttachments(fileData.attachments ?? []);
       if (collaborationResponse.ok) { setItemTags(collaborationData.tags ?? []); setComments(collaborationData.comments ?? []); }
     } catch {
@@ -427,8 +434,8 @@ export default function Home() {
       const item = await write(
         editing ? "PATCH" : "POST",
         editing
-          ? { id: editing.id, expectedVersion: editing.version, ...draft, category: customCategory.trim() || draft.category }
-          : { ...draft, category: customCategory.trim() || draft.category },
+          ? { id: editing.id, expectedVersion: editing.version, ...draft, urls: linkInputs, category: customCategory.trim() || draft.category }
+          : { ...draft, urls: linkInputs, category: customCategory.trim() || draft.category },
       );
       if (!item) throw new Error("บันทึกไม่สำเร็จ");
       const uploaded: Attachment[] = [];
@@ -442,6 +449,7 @@ export default function Home() {
         }
       }
       setEditing(item);
+      if (item.type === "link") setItemLinks(linkInputs.filter(Boolean).map((url, sortOrder) => ({ id: `${item.id}-${sortOrder}`, url, sortOrder })));
       setDraft({ type: item.type, title: item.title, content: item.content, url: item.url, category: item.category });
       setAttachments((current) => [...current, ...uploaded]);
       setSelectedFiles([]);
@@ -1030,7 +1038,7 @@ export default function Home() {
               <div className="reader-view">
                 <div className="reader-meta"><span>{types[editing.type].label}</span><span>{editing.category}</span><span>เวอร์ชัน {editing.version}</span>{editing.inbox ? <span>อยู่ใน Inbox</span> : null}{editing.favorite ? <span>รายการโปรด</span> : null}</div>
                 <h3>{editing.title}</h3>
-                {editing.type === "link" && editing.url ? <a className="reader-link" href={editing.url} target="_blank" rel="noreferrer">เปิดลิงก์ ↗</a> : null}
+                {editing.type === "link" && itemLinks.length ? <div className="reader-links"><strong>ลิงก์ที่บันทึกไว้ ({itemLinks.length})</strong>{itemLinks.map((link, index) => <a className="reader-link" href={link.url} target="_blank" rel="noreferrer" key={link.id}>{index + 1}. {link.url} ↗</a>)}</div> : editing.type === "link" && editing.url ? <a className="reader-link" href={editing.url} target="_blank" rel="noreferrer">เปิดลิงก์ ↗</a> : null}
                 <div className="reader-content">{editing.content || "ไม่มีรายละเอียดเพิ่มเติม"}</div>
                 <dl className="reader-details">
                   <div><dt>สร้างโดย</dt><dd>{editing.createdByName} · {editing.createdByTeam}<br />{formatDate(editing.createdAt)}</dd></div>
@@ -1082,23 +1090,11 @@ export default function Home() {
                   />
                 </label>
                 {draft.type === "link" ? (
-                  <label className="field">
-                    <span>
-                      URL <b>*</b>
-                    </span>
-                    <input
-                      type="url"
-                      value={draft.url}
-                      required
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          url: event.target.value,
-                        }))
-                      }
-                      placeholder="https://example.com"
-                    />
-                  </label>
+                  <div className="field link-inputs">
+                    <span>ลิงก์ <b>*</b><small>เพิ่มได้สูงสุด 50 ลิงก์ต่อรายการ</small></span>
+                    {linkInputs.map((url, index) => <div className="link-input-row" key={index}><input type="url" value={url} required={index === 0} onChange={(event) => setLinkInputs((current) => current.map((value, position) => position === index ? event.target.value : value))} placeholder="https://example.com" /><button className="ghost-button" type="button" disabled={linkInputs.length === 1} aria-label={`ลบลิงก์ที่ ${index + 1}`} onClick={() => setLinkInputs((current) => current.filter((_, position) => position !== index))}>ลบ</button></div>)}
+                    <button className="secondary-button" type="button" disabled={linkInputs.length >= 50} onClick={() => setLinkInputs((current) => [...current, ""])}>+ เพิ่มลิงก์</button>
+                  </div>
                 ) : null}
                 <label className="field">
                   <span>รายละเอียด</span>

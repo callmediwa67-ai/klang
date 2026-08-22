@@ -71,6 +71,18 @@ export const attachments = sqliteTable(
   (table) => [index("idx_attachments_item_created").on(table.itemId, table.createdAt)],
 );
 
+export const itemLinks = sqliteTable(
+  "item_links",
+  {
+    id: text("id").primaryKey(),
+    itemId: text("item_id").notNull(),
+    url: text("url").notNull(),
+    sortOrder: integer("sort_order").notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_item_links_item_order").on(table.itemId, table.sortOrder)],
+);
+
 export const tags = sqliteTable("tags", { id: text("id").primaryKey(), name: text("name").notNull(), color: text("color").notNull().default("neutral"), createdByName: text("created_by_name").notNull(), createdByTeam: text("created_by_team").notNull(), createdAt: text("created_at").notNull() }, (table) => [index("idx_tags_name").on(table.name)]);
 export const itemTags = sqliteTable("item_tags", { itemId: text("item_id").notNull(), tagId: text("tag_id").notNull(), createdAt: text("created_at").notNull() }, (table) => [index("idx_item_tags_item").on(table.itemId), index("idx_item_tags_tag").on(table.tagId)]);
 export const comments = sqliteTable("comments", { id: text("id").primaryKey(), itemId: text("item_id").notNull(), body: text("body").notNull(), authorName: text("author_name").notNull(), authorTeam: text("author_team").notNull(), createdAt: text("created_at").notNull() }, (table) => [index("idx_comments_item_created").on(table.itemId, table.createdAt)]);
