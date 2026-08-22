@@ -27,7 +27,11 @@ function serverError(reason: unknown) { console.error(reason); return error("เ
 export async function GET(request: Request) {
   try { await ensureDatabase(); const query = new URL(request.url).searchParams; const id = cleanText(query.get("id"), 100);
     if (query.get("history") === "1" && id) { const [item] = await getDb().select().from(items).where(eq(items.id, id)); if (!item) return error("ไม่พบรายการนี้", 404); const versions = await getDb().select().from(itemVersions).where(eq(itemVersions.itemId, id)).orderBy(desc(itemVersions.versionNumber)); return Response.json({ item, versions }); }
-    const trash = query.get("view") === "trash"; const rows = await getDb().select().from(items).where(trash ? undefined : isNull(items.deletedAt)).orderBy(desc(items.updatedAt), desc(items.createdAt)).limit(250); return Response.json({ items: trash ? rows.filter((row) => row.deletedAt) : rows });
+    const trash = query.get("view") === "trash"; const search = cleanText(query.get("q"), 160); const page = Math.max(1, Math.min(Number(query.get("page")) || 1, 10_000)); const pageSize = Math.max(1, Math.min(Number(query.get("pageSize")) || 30, 100));
+    const filters = [trash ? "deleted_at IS NOT NULL" : "deleted_at IS NULL"]; const bindings: unknown[] = [];
+    if (search) { filters.push("(title LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\' OR url LIKE ? ESCAPE '\\' OR updated_by_name LIKE ? ESCAPE '\\' OR updated_by_team LIKE ? ESCAPE '\\')"); const term = `%${search.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_")}%`; bindings.push(term, term, term, term, term); }
+    const where = filters.join(" AND "); const d1 = getRawDb(); const count = await d1.prepare(`SELECT COUNT(*) AS total FROM items WHERE ${where}`).bind(...bindings).first<{ total: number }>(); const rows = await d1.prepare(`SELECT * FROM items WHERE ${where} ORDER BY updated_at DESC, created_at DESC LIMIT ? OFFSET ?`).bind(...bindings, pageSize, (page - 1) * pageSize).all<VaultItem>();
+    return Response.json({ items: rows.results, page, pageSize, total: count?.total ?? 0, hasMore: page * pageSize < (count?.total ?? 0) });
   } catch (reason) { return serverError(reason); }
 }
 

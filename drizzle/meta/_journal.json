@@ -15,6 +15,13 @@
       "when": 1787421963802,
       "tag": "0001_quick_longshot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787422763301,
+      "tag": "0002_mushy_phalanx",
+      "breakpoints": true
     }
   ]
 }

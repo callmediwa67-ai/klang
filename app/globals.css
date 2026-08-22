@@ -88,6 +88,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .type-shortcuts > div { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .type-shortcuts button { display: grid; place-items: center; gap: 6px; padding: 9px 4px; border: 1px solid rgba(255,255,255,.14); border-radius: 12px; color: white; background: rgba(255,255,255,.06); font-size: 9px; cursor: pointer; }
 .type-shortcuts button:hover { background: rgba(255,255,255,.12); }
+.backup-actions { z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 14px; }
+.backup-actions .secondary-button { display: grid; place-items: center; min-height: 36px; padding: 7px; border-color: rgba(255,255,255,.2); color: white; text-align: center; background: rgba(255,255,255,.08); font-size: 10px; text-decoration: none; cursor: pointer; }
+.backup-actions input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.attachment-list { display: grid; gap: 6px; margin-top: 14px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: #f7f8f0; font-size: 11px; }
+.attachment-list > span { color: var(--muted); font-weight: 700; }.attachment-list a { color: var(--forest); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pagination-controls { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding-top: 18px; color: var(--muted); font-size: 11px; }.pagination-controls button:disabled { opacity: .45; cursor: not-allowed; }
 .mini-type { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 8px; color: var(--ink); font-size: 9px; font-weight: 850; }
 .loading-state, .empty-state { min-height: 280px; display: grid; place-items: center; align-content: center; text-align: center; color: var(--muted); }
 .loading-state { grid-template-columns: auto auto; gap: 10px; font-size: 12px; }

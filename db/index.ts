@@ -58,6 +58,11 @@ export async function ensureDatabase() {
     )`),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_events (created_at)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY NOT NULL, window_start INTEGER NOT NULL, count INTEGER NOT NULL)"),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS attachments (
+      id TEXT PRIMARY KEY NOT NULL, item_id TEXT NOT NULL, object_key TEXT NOT NULL, filename TEXT NOT NULL,
+      content_type TEXT NOT NULL, size INTEGER NOT NULL, uploaded_by_name TEXT NOT NULL, uploaded_by_team TEXT NOT NULL, created_at TEXT NOT NULL
+    )`),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_attachments_item_created ON attachments (item_id, created_at)"),
     env.DB.prepare("UPDATE items SET version = 1 WHERE version IS NULL OR version < 1"),
     env.DB.prepare("UPDATE items SET created_by_name = 'KLANG', created_by_team = 'ทีม' WHERE created_by_name = ''"),
     env.DB.prepare("UPDATE items SET updated_by_name = created_by_name, updated_by_team = created_by_team WHERE updated_by_name = ''"),
@@ -143,4 +148,9 @@ export function getDb() {
 export function getRawDb() {
   if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   return env.DB;
+}
+
+export function getFiles() {
+  if (!env.FILES) throw new Error("Cloudflare R2 binding `FILES` is unavailable.");
+  return env.FILES as R2Bucket;
 }

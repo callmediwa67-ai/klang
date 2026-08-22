@@ -61,4 +61,14 @@ export const rateLimits = sqliteTable("rate_limits", {
   key: text("key").primaryKey(), windowStart: integer("window_start").notNull(), count: integer("count").notNull(),
 });
 
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: text("id").primaryKey(), itemId: text("item_id").notNull(), objectKey: text("object_key").notNull(),
+    filename: text("filename").notNull(), contentType: text("content_type").notNull(), size: integer("size").notNull(),
+    uploadedByName: text("uploaded_by_name").notNull(), uploadedByTeam: text("uploaded_by_team").notNull(), createdAt: text("created_at").notNull(),
+  },
+  (table) => [index("idx_attachments_item_created").on(table.itemId, table.createdAt)],
+);
+
 export type VaultItem = typeof items.$inferSelect;
