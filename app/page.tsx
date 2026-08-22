@@ -152,6 +152,7 @@ export default function Home() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [history, setHistory] = useState<Version[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [conflict, setConflict] = useState<VaultItem | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const load = useCallback(
@@ -282,6 +283,7 @@ export default function Home() {
     setSelectedFile(null);
     setCustomCategory("");
     setShowHistory(false);
+    setIsEditing(true);
     setConflict(null);
     setModal("item");
   }
@@ -299,6 +301,7 @@ export default function Home() {
     setSelectedFile(null);
     setCustomCategory("");
     setShowHistory(false);
+    setIsEditing(false);
     setConflict(null);
     setModal("item");
     try {
@@ -377,7 +380,11 @@ export default function Home() {
         const data = (await response.json()) as { error?: string };
         if (!response.ok) throw new Error(data.error || "อัปโหลดไฟล์ไม่สำเร็จ");
       }
-      setModal(null);
+      setEditing(item);
+      setDraft({ type: item.type, title: item.title, content: item.content, url: item.url, category: item.category });
+      setSelectedFile(null);
+      setCustomCategory("");
+      setIsEditing(false);
       await load(view);
       toast(
         selectedFile
@@ -931,6 +938,17 @@ export default function Home() {
                 ) : (
                   <p>ยังไม่มีประวัติเพิ่มเติม</p>
                 )}
+              </div>
+            ) : editing && !isEditing ? (
+              <div className="reader-view">
+                <div className="reader-meta"><span>{types[editing.type].label}</span><span>{editing.category}</span><span>เวอร์ชัน {editing.version}</span></div>
+                <h3>{editing.title}</h3>
+                {editing.type === "link" && editing.url ? <a className="reader-link" href={editing.url} target="_blank" rel="noreferrer">เปิดลิงก์ ↗</a> : null}
+                <div className="reader-content">{editing.content || "ไม่มีรายละเอียดเพิ่มเติม"}</div>
+                {itemTags.length ? <div className="reader-tags">{itemTags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</div> : null}
+                {attachments.length ? <div className="attachment-list"><span>ไฟล์แนบ</span>{attachments.map((attachment) => <a key={attachment.id} href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer">{attachment.filename}</a>)}</div> : null}
+                <div className="comments-panel"><strong>ความคิดเห็น</strong>{comments.map((comment) => <p key={comment.id}><b>{comment.authorName} · {comment.authorTeam}</b><span>{comment.body}</span></p>)}<div><input value={commentDraft} maxLength={2000} onChange={(event) => setCommentDraft(event.target.value)} placeholder="เขียนความคิดเห็น" /><button className="secondary-button" type="button" onClick={() => void addComment()}>ส่ง</button></div></div>
+                <footer className="modal-actions"><button className="ghost-button" type="button" onClick={() => setModal(null)}>ปิด</button><div><button className="ghost-button" type="button" onClick={() => setShowHistory(true)}>ประวัติ</button><button className="primary-button" type="button" onClick={() => setIsEditing(true)}>แก้ไข</button></div></footer>
               </div>
             ) : (
               <form onSubmit={saveItem}>
