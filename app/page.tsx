@@ -57,6 +57,8 @@ type Attachment = {
   uploadedByTeam: string;
   createdAt: string;
 };
+type Tag = { id: string; name: string; color: string };
+type Comment = { id: string; body: string; authorName: string; authorTeam: string; createdAt: string };
 type Event = {
   id: string;
   action: string;
@@ -138,6 +140,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentDraft, setCommentDraft] = useState("");
   const [modal, setModal] = useState<"item" | "profile" | null>(null);
   const [editing, setEditing] = useState<VaultItem | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -287,23 +291,31 @@ export default function Home() {
     setConflict(null);
     setModal("item");
     try {
-      const [historyResponse, filesResponse] = await Promise.all([
+      const [historyResponse, filesResponse, collaborationResponse] = await Promise.all([
         fetch(`/api/items?id=${encodeURIComponent(item.id)}&history=1`, {
           cache: "no-store",
         }),
         fetch(`/api/files?itemId=${encodeURIComponent(item.id)}`, {
           cache: "no-store",
         }),
+        fetch(`/api/collaboration?itemId=${encodeURIComponent(item.id)}`, { cache: "no-store" }),
       ]);
       const data = (await historyResponse.json()) as { versions?: Version[] };
       const fileData = (await filesResponse.json()) as {
         attachments?: Attachment[];
       };
+      const collaborationData = (await collaborationResponse.json()) as { tags?: Tag[]; comments?: Comment[] };
       if (historyResponse.ok) setHistory(data.versions ?? []);
       if (filesResponse.ok) setAttachments(fileData.attachments ?? []);
+      if (collaborationResponse.ok) { setComments(collaborationData.comments ?? []); }
     } catch {
       /* supplemental data */
     }
+  }
+  async function addComment() {
+    if (!editing || !profile || !commentDraft.trim()) return;
+    const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "comment", itemId: editing.id, body: commentDraft, actor: actor(profile) }) });
+    const data = await response.json() as { comment?: Comment; error?: string }; if (!response.ok) { setError(data.error || "เพิ่มความคิดเห็นไม่สำเร็จ"); return; } setComments((current) => [...current, data.comment!]); setCommentDraft("");
   }
   async function write(
     method: "POST" | "PATCH" | "DELETE",
@@ -1016,6 +1028,13 @@ export default function Home() {
                   </select>
                 </label>
                 {error ? <p className="form-error">{error}</p> : null}
+                {editing ? (
+                  <div className="comments-panel">
+                    <strong>ความคิดเห็น</strong>
+                    {comments.map((comment) => <p key={comment.id}><b>{comment.authorName} · {comment.authorTeam}</b><span>{comment.body}</span></p>)}
+                    <div><input value={commentDraft} maxLength={2000} onChange={(event) => setCommentDraft(event.target.value)} placeholder="เขียนความคิดเห็น" /><button className="secondary-button" type="button" onClick={() => void addComment()}>ส่ง</button></div>
+                  </div>
+                ) : null}
                 {conflict ? (
                   <div className="conflict-box">
                     <strong>มีคนบันทึกเวอร์ชันใหม่ก่อนคุณ</strong>

@@ -63,6 +63,13 @@ export async function ensureDatabase() {
       content_type TEXT NOT NULL, size INTEGER NOT NULL, uploaded_by_name TEXT NOT NULL, uploaded_by_team TEXT NOT NULL, created_at TEXT NOT NULL
     )`),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_attachments_item_created ON attachments (item_id, created_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS tags (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT 'neutral', created_by_name TEXT NOT NULL, created_by_team TEXT NOT NULL, created_at TEXT NOT NULL)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_tags_name ON tags (name)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS item_tags (item_id TEXT NOT NULL, tag_id TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (item_id, tag_id))"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_item_tags_item ON item_tags (item_id)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags (tag_id)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY NOT NULL, item_id TEXT NOT NULL, body TEXT NOT NULL, author_name TEXT NOT NULL, author_team TEXT NOT NULL, created_at TEXT NOT NULL)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_comments_item_created ON comments (item_id, created_at)"),
     env.DB.prepare("UPDATE items SET version = 1 WHERE version IS NULL OR version < 1"),
     env.DB.prepare("UPDATE items SET created_by_name = 'KLANG', created_by_team = 'ทีม' WHERE created_by_name = ''"),
     env.DB.prepare("UPDATE items SET updated_by_name = created_by_name, updated_by_team = created_by_team WHERE updated_by_name = ''"),
