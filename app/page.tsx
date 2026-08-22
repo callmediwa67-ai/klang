@@ -140,6 +140,9 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [allTags, setAllTags] = useState<Tag[]>([]);
+  const [itemTags, setItemTags] = useState<Tag[]>([]);
+  const [newTagName, setNewTagName] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState("");
   const [modal, setModal] = useState<"item" | "profile" | null>(null);
@@ -206,6 +209,8 @@ export default function Home() {
   useEffect(() => {
     if (modal === "item") setTimeout(() => titleRef.current?.focus(), 40);
   }, [modal]);
+  useEffect(() => { if (!profile) return; const refresh = () => { void load(view); }; const timer = window.setInterval(refresh, 20_000); return () => window.clearInterval(timer); }, [profile, view, load]);
+  useEffect(() => { if (!profile) return; void fetch("/api/collaboration", { cache: "no-store" }).then((response) => response.json()).then((data: { tags?: Tag[] }) => setAllTags(data.tags ?? [])).catch(() => undefined); }, [profile]);
   const filtered = useMemo(
     () =>
       items.filter((item) => {
@@ -307,7 +312,7 @@ export default function Home() {
       const collaborationData = (await collaborationResponse.json()) as { tags?: Tag[]; comments?: Comment[] };
       if (historyResponse.ok) setHistory(data.versions ?? []);
       if (filesResponse.ok) setAttachments(fileData.attachments ?? []);
-      if (collaborationResponse.ok) { setComments(collaborationData.comments ?? []); }
+      if (collaborationResponse.ok) { setItemTags(collaborationData.tags ?? []); setComments(collaborationData.comments ?? []); }
     } catch {
       /* supplemental data */
     }
@@ -317,6 +322,8 @@ export default function Home() {
     const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "comment", itemId: editing.id, body: commentDraft, actor: actor(profile) }) });
     const data = await response.json() as { comment?: Comment; error?: string }; if (!response.ok) { setError(data.error || "เพิ่มความคิดเห็นไม่สำเร็จ"); return; } setComments((current) => [...current, data.comment!]); setCommentDraft("");
   }
+  async function saveTags(tagIds: string[]) { if (!editing || !profile) return; const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_tags", itemId: editing.id, tagIds, actor: actor(profile) }) }); if (response.ok) setItemTags(allTags.filter((tag) => tagIds.includes(tag.id))); }
+  async function createTag() { if (!profile || !newTagName.trim()) return; const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_tag", name: newTagName, actor: actor(profile) }) }); const data = await response.json() as { tag?: Tag }; if (data.tag) { setAllTags((current) => [...current, data.tag!]); setNewTagName(""); } }
   async function write(
     method: "POST" | "PATCH" | "DELETE",
     body: Record<string, unknown>,
@@ -1009,6 +1016,7 @@ export default function Home() {
                     ))}
                   </div>
                 ) : null}
+                {editing ? <div className="tag-panel"><strong>แท็ก</strong><div>{allTags.map((tag) => <label key={tag.id}><input type="checkbox" checked={itemTags.some((current) => current.id === tag.id)} onChange={(event) => { const ids = event.target.checked ? [...itemTags.map((current) => current.id), tag.id] : itemTags.filter((current) => current.id !== tag.id).map((current) => current.id); void saveTags(ids); }} /> {tag.name}</label>)}</div><div><input value={newTagName} maxLength={40} onChange={(event) => setNewTagName(event.target.value)} placeholder="สร้างแท็กใหม่" /><button className="secondary-button" type="button" onClick={() => void createTag()}>เพิ่มแท็ก</button></div></div> : null}
                 <label className="field">
                   <span>หมวดหมู่</span>
                   <select
