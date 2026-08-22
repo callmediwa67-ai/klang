@@ -152,6 +152,7 @@ export default function Home() {
   const [customCategory, setCustomCategory] = useState("");
   const [managedCategories, setManagedCategories] = useState<ManagedCategory[]>([]);
   const [categorySearch, setCategorySearch] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [categoryRename, setCategoryRename] = useState<{ id: string; name: string } | null>(null);
   const [categoryDelete, setCategoryDelete] = useState<string | null>(null);
   const [replacementCategory, setReplacementCategory] = useState("uncategorized");
@@ -274,7 +275,19 @@ export default function Home() {
     setTimeout(() => setNotice(""), 2600);
   }
   function openCategoryManager() {
-    setCategorySearch(""); setCategoryRename(null); setCategoryDelete(null); setReplacementCategory("uncategorized"); setModal("categories");
+    setCategorySearch(""); setNewCategoryName(""); setCategoryRename(null); setCategoryDelete(null); setReplacementCategory("uncategorized"); setModal("categories");
+  }
+  async function createCategoryFromManager(event: FormEvent) {
+    event.preventDefault();
+    if (!profile || !newCategoryName.trim()) return;
+    setBusyId("new-category"); setError("");
+    try {
+      const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newCategoryName, actor: actor(profile) }) });
+      const data = await response.json() as { category?: ManagedCategory; existing?: boolean; error?: string };
+      if (!response.ok || !data.category) throw new Error(data.error || "สร้างหมวดหมู่ไม่สำเร็จ");
+      setNewCategoryName(""); setCategorySearch(""); await refreshCategories();
+      toast(data.existing ? "หมวดหมู่นี้มีอยู่แล้ว จึงเลือกใช้รายการเดิม" : "สร้างหมวดหมู่ใหม่แล้ว");
+    } catch (reason) { setError(message(reason)); } finally { setBusyId(null); }
   }
   async function renameCategory() {
     if (!profile || !categoryRename?.name.trim()) return;
@@ -959,6 +972,10 @@ export default function Home() {
             <header className="modal-header"><div><p className="eyebrow">จัดระเบียบคลัง</p><h2>จัดการหมวดหมู่</h2></div><button className="close-button" type="button" aria-label="ปิด" onClick={() => setModal(null)}>×</button></header>
             <div className="category-manager-body">
               <p>ใช้ปุ่มขึ้น/ลงเพื่อกำหนดลำดับเดียวกับ dropdown เปลี่ยนชื่อหรือลบได้ โดยการลบจะย้ายรายการเดิมไปยังหมวดที่คุณเลือกก่อนเสมอ</p>
+              <form className="category-create-form" onSubmit={createCategoryFromManager}>
+                <label htmlFor="new-category-name">สร้างหมวดหมู่ใหม่</label>
+                <div><input id="new-category-name" value={newCategoryName} maxLength={40} required onChange={(event) => setNewCategoryName(event.target.value)} placeholder="เช่น ลูกค้า, การตลาด, งานด่วน" /><button className="primary-button" type="submit" disabled={busyId === "new-category"}>{busyId === "new-category" ? "กำลังสร้าง..." : "สร้าง"}</button></div>
+              </form>
               <input className="category-search" type="search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="ค้นหาหมวดหมู่" />
               <div className="managed-category-list">
                 {managedCategories.filter((item) => item.name.toLocaleLowerCase("th").includes(categorySearch.trim().toLocaleLowerCase("th"))).map((item, index, filteredCategories) => (
