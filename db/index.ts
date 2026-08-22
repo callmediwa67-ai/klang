@@ -77,6 +77,11 @@ export async function ensureDatabase() {
     env.DB.prepare("UPDATE items SET created_by_name = 'KLANG', created_by_team = 'ทีม' WHERE created_by_name = ''"),
     env.DB.prepare("UPDATE items SET updated_by_name = created_by_name, updated_by_team = created_by_team WHERE updated_by_name = ''"),
   ]);
+  await env.DB.batch([
+    env.DB.prepare("WITH ranked AS (SELECT id, name, normalized_name, ROW_NUMBER() OVER (PARTITION BY normalized_name ORDER BY created_at ASC, id ASC) AS position FROM categories) UPDATE items SET category = COALESCE((SELECT name FROM ranked WHERE ranked.normalized_name = lower(trim(items.category)) AND ranked.position = 1), category) WHERE EXISTS (SELECT 1 FROM ranked WHERE ranked.normalized_name = lower(trim(items.category)))"),
+    env.DB.prepare("DELETE FROM categories WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY normalized_name ORDER BY created_at ASC, id ASC) AS position FROM categories) WHERE position > 1)"),
+    env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_normalized_name_unique ON categories (normalized_name)"),
+  ]);
 
   const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM items").first<{
     total: number;
