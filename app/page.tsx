@@ -59,7 +59,7 @@ type Attachment = {
 };
 type Tag = { id: string; name: string; color: string };
 type Comment = { id: string; body: string; authorName: string; authorTeam: string; createdAt: string };
-type ManagedCategory = { id: string; name: string; itemCount: number };
+type ManagedCategory = { id: string; name: string; sortOrder: number; itemCount: number };
 type Event = {
   id: string;
   action: string;
@@ -261,7 +261,11 @@ export default function Home() {
     window.addEventListener("visibilitychange", onVisibilityChange);
     return () => { window.clearInterval(timer); window.removeEventListener("visibilitychange", onVisibilityChange); };
   }, [profile, view, load, refreshOpenItem]);
-  const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...managedCategories.map((category) => category.name), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [managedCategories, items, draft.category]);
+  const categoryOptions = useMemo(() => {
+    const managed = managedCategories.map((item) => item.name);
+    const fallback = [...items.map((item) => item.category), draft.category].filter((name) => !managed.includes(name));
+    return Array.from(new Set(["uncategorized", ...managed.filter((name) => name !== "uncategorized"), ...fallback])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const);
+  }, [managedCategories, items, draft.category]);
   function toast(text: string) {
     setNotice(text);
     setTimeout(() => setNotice(""), 2600);
@@ -281,6 +285,16 @@ export default function Home() {
     const data = await response.json() as { error?: string }; if (!response.ok) { setError(data.error || "ลบหมวดหมู่ไม่สำเร็จ"); return; }
     if (category !== "all" && category === managedCategories.find((item) => item.id === categoryDelete)?.name) setCategory("all");
     setCategoryDelete(null); await refreshCategories(); await load(view); toast("ลบหมวดหมู่และย้ายรายการแล้ว");
+  }
+  async function reorderCategories(sourceId: string, direction: -1 | 1) {
+    if (!profile) return;
+    const currentIndex = managedCategories.findIndex((item) => item.id === sourceId); const targetIndex = currentIndex + direction;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= managedCategories.length) return;
+    const next = [...managedCategories]; [next[currentIndex], next[targetIndex]] = [next[targetIndex], next[currentIndex]];
+    setManagedCategories(next);
+    const response = await fetch("/api/categories", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderedIds: next.map((item) => item.id), actor: actor(profile) }) });
+    if (!response.ok) { await refreshCategories(); setError("เรียงลำดับหมวดหมู่ไม่สำเร็จ"); return; }
+    toast("เรียงลำดับหมวดหมู่แล้ว");
   }
   async function restoreBackup(file: File | null) {
     if (!file || !profile) return;
@@ -936,12 +950,12 @@ export default function Home() {
           <section className="item-modal category-manager" role="dialog" aria-modal="true" aria-label="จัดการหมวดหมู่">
             <header className="modal-header"><div><p className="eyebrow">จัดระเบียบคลัง</p><h2>จัดการหมวดหมู่</h2></div><button className="close-button" type="button" aria-label="ปิด" onClick={() => setModal(null)}>×</button></header>
             <div className="category-manager-body">
-              <p>เปลี่ยนชื่อหรือลบหมวดหมู่ได้ การลบจะย้ายรายการเดิมไปยังหมวดที่คุณเลือกก่อนเสมอ</p>
+              <p>ใช้ปุ่มขึ้น/ลงเพื่อกำหนดลำดับเดียวกับ dropdown เปลี่ยนชื่อหรือลบได้ โดยการลบจะย้ายรายการเดิมไปยังหมวดที่คุณเลือกก่อนเสมอ</p>
               <input className="category-search" type="search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="ค้นหาหมวดหมู่" />
               <div className="managed-category-list">
-                {managedCategories.filter((item) => item.name.toLocaleLowerCase("th").includes(categorySearch.trim().toLocaleLowerCase("th"))).map((item) => (
+                {managedCategories.filter((item) => item.name.toLocaleLowerCase("th").includes(categorySearch.trim().toLocaleLowerCase("th"))).map((item, index, filteredCategories) => (
                   <div className="managed-category-row" key={item.id}>
-                    {categoryRename?.id === item.id ? <><input value={categoryRename.name} maxLength={40} onChange={(event) => setCategoryRename({ id: item.id, name: event.target.value })} /><button className="secondary-button" type="button" onClick={() => void renameCategory()}>บันทึก</button><button className="ghost-button" type="button" onClick={() => setCategoryRename(null)}>ยกเลิก</button></> : categoryDelete === item.id ? <div className="category-delete-confirm"><strong>ลบ “{item.name}”?</strong><span>ย้าย {item.itemCount} รายการไป</span><select value={replacementCategory} onChange={(event) => setReplacementCategory(event.target.value)}><option value="uncategorized">ยังไม่จัดหมวดหมู่</option>{categoryOptions.filter(([key]) => key !== item.name && key !== "uncategorized").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button className="danger-button" type="button" onClick={() => void deleteCategory()}>ลบและย้ายรายการ</button><button className="ghost-button" type="button" onClick={() => setCategoryDelete(null)}>ยกเลิก</button></div> : <><div><strong>{item.name}</strong><small>{item.itemCount} รายการ</small></div><div className="managed-category-actions"><button className="ghost-button" type="button" onClick={() => setCategoryRename({ id: item.id, name: item.name })}>เปลี่ยนชื่อ</button><button className="danger-button" type="button" onClick={() => { setCategoryDelete(item.id); setReplacementCategory("uncategorized"); }}>ลบ</button></div></>}
+                  {categoryRename?.id === item.id ? <><input value={categoryRename.name} maxLength={40} onChange={(event) => setCategoryRename({ id: item.id, name: event.target.value })} /><button className="secondary-button" type="button" onClick={() => void renameCategory()}>บันทึก</button><button className="ghost-button" type="button" onClick={() => setCategoryRename(null)}>ยกเลิก</button></> : categoryDelete === item.id ? <div className="category-delete-confirm"><strong>ลบ “{item.name}”?</strong><span>ย้าย {item.itemCount} รายการไป</span><select value={replacementCategory} onChange={(event) => setReplacementCategory(event.target.value)}><option value="uncategorized">ยังไม่จัดหมวดหมู่</option>{categoryOptions.filter(([key]) => key !== item.name && key !== "uncategorized").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button className="danger-button" type="button" onClick={() => void deleteCategory()}>ลบและย้ายรายการ</button><button className="ghost-button" type="button" onClick={() => setCategoryDelete(null)}>ยกเลิก</button></div> : <><div><strong>{categories[item.name] ?? item.name}</strong><small>{item.itemCount} รายการ</small></div><div className="managed-category-actions"><button className="order-button" type="button" disabled={index === 0} aria-label={`เลื่อน ${item.name} ขึ้น`} onClick={() => void reorderCategories(item.id, -1)}>↑</button><button className="order-button" type="button" disabled={index === filteredCategories.length - 1} aria-label={`เลื่อน ${item.name} ลง`} onClick={() => void reorderCategories(item.id, 1)}>↓</button><button className="ghost-button" type="button" onClick={() => setCategoryRename({ id: item.id, name: item.name })}>เปลี่ยนชื่อ</button><button className="danger-button" type="button" onClick={() => { setCategoryDelete(item.id); setReplacementCategory("uncategorized"); }}>ลบ</button></div></>}
                   </div>
                 ))}
                 {!managedCategories.filter((item) => item.name.toLocaleLowerCase("th").includes(categorySearch.trim().toLocaleLowerCase("th"))).length ? <p className="category-empty">ยังไม่พบหมวดหมู่</p> : null}

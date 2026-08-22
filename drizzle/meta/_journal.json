@@ -43,6 +43,13 @@
       "when": 1787433686991,
       "tag": "0005_warm_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787434133157,
+      "tag": "0006_gorgeous_baron_strucker",
+      "breakpoints": true
     }
   ]
 }

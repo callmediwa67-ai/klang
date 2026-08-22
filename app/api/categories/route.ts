@@ -22,8 +22,8 @@ async function snapshotAndMoveItems(from: string, to: string, who: Actor) {
 export async function GET() {
   try {
     await ensureDatabase();
-    const result = await getRawDb().prepare("SELECT c.*, COUNT(i.id) AS item_count FROM categories c LEFT JOIN items i ON i.category = c.name GROUP BY c.id ORDER BY c.name ASC").all<Record<string, unknown>>();
-    return Response.json({ categories: result.results.filter((category) => !category.archived_at).map((category) => ({ id: category.id, name: category.name, normalizedName: category.normalized_name, color: category.color, createdByName: category.created_by_name, createdByTeam: category.created_by_team, createdAt: category.created_at, itemCount: Number(category.item_count ?? 0) })) });
+    const result = await getRawDb().prepare("SELECT c.*, COUNT(i.id) AS item_count FROM categories c LEFT JOIN items i ON i.category = c.name GROUP BY c.id ORDER BY c.sort_order ASC, c.name ASC").all<Record<string, unknown>>();
+    return Response.json({ categories: result.results.filter((category) => !category.archived_at).map((category) => ({ id: category.id, name: category.name, normalizedName: category.normalized_name, sortOrder: Number(category.sort_order ?? 0), color: category.color, createdByName: category.created_by_name, createdByTeam: category.created_by_team, createdAt: category.created_at, itemCount: Number(category.item_count ?? 0) })) });
   } catch { return fail("เปิดหมวดหมู่ไม่สำเร็จ", 500); }
 }
 
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
       if (existing[0].archivedAt) await getDb().update(categories).set({ archivedAt: null, name }).where(eq(categories.id, existing[0].id));
       return Response.json({ category: { ...existing[0], name, archivedAt: null }, existing: true });
     }
-    const [category] = await getDb().insert(categories).values({ id: crypto.randomUUID(), name, normalizedName, color: "neutral", createdByName: who.name, createdByTeam: who.team, createdAt: new Date().toISOString() }).returning();
+    const max = await getRawDb().prepare("SELECT MAX(sort_order) AS value FROM categories").first<{ value: number | null }>(); const [category] = await getDb().insert(categories).values({ id: crypto.randomUUID(), name, normalizedName, sortOrder: (max?.value ?? 0) + 10, color: "neutral", createdByName: who.name, createdByTeam: who.team, createdAt: new Date().toISOString() }).returning();
     await recordBulkActivity(who, "category_created", category.id, `สร้างหมวดหมู่ ${name}`);
     return Response.json({ category: { ...category, itemCount: 0 } }, { status: 201 });
   } catch { return fail("สร้างหมวดหมู่ไม่สำเร็จ", 500); }
@@ -44,8 +44,10 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    await ensureDatabase(); const payload = await request.json() as Record<string, unknown>; const who = actor(payload.actor); const id = clean(payload.id, 100); const name = clean(payload.name, 40);
-    if (!who || !id || !name) return fail("กรุณาระบุหมวดหมู่ใหม่ให้ครบ");
+    await ensureDatabase(); const payload = await request.json() as Record<string, unknown>; const who = actor(payload.actor); const orderedIds = Array.isArray(payload.orderedIds) ? payload.orderedIds.map((value) => clean(value, 100)).filter(Boolean).slice(0, 500) : []; const id = clean(payload.id, 100); const name = clean(payload.name, 40);
+    if (!who) return fail("กรุณาระบุชื่อและทีมก่อนจัดการหมวดหมู่");
+    if (orderedIds.length) { await getRawDb().batch(orderedIds.map((categoryId, index) => getRawDb().prepare("UPDATE categories SET sort_order = ? WHERE id = ? AND archived_at IS NULL").bind(index * 10, categoryId))); await recordBulkActivity(who, "category_reordered", orderedIds[0], "เรียงลำดับหมวดหมู่ใหม่"); return Response.json({ ok: true }); }
+    if (!id || !name) return fail("กรุณาระบุหมวดหมู่ใหม่ให้ครบ");
     const [current] = await getDb().select().from(categories).where(eq(categories.id, id)); if (!current || current.archivedAt) return fail("ไม่พบหมวดหมู่นี้", 404);
     const normalizedName = name.toLocaleLowerCase("th"); const [duplicate] = await getDb().select().from(categories).where(eq(categories.normalizedName, normalizedName));
     if (duplicate && duplicate.id !== id) return fail("มีหมวดหมู่ชื่อนี้อยู่แล้ว", 409);

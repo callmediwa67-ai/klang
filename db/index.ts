@@ -10,6 +10,7 @@ const itemColumns: Array<[string, string]> = [
   ["updated_by_device_id", "TEXT NOT NULL DEFAULT ''"], ["updated_by_name", "TEXT NOT NULL DEFAULT ''"], ["updated_by_team", "TEXT NOT NULL DEFAULT ''"],
   ["deleted_at", "TEXT"], ["deleted_by_device_id", "TEXT"], ["deleted_by_name", "TEXT"], ["deleted_by_team", "TEXT"],
 ];
+const categoryColumns: Array<[string, string]> = [["sort_order", "INTEGER NOT NULL DEFAULT 0"]];
 
 export async function ensureDatabase() {
   if (!env.DB) {
@@ -70,17 +71,23 @@ export async function ensureDatabase() {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags (tag_id)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS comments (id TEXT PRIMARY KEY NOT NULL, item_id TEXT NOT NULL, body TEXT NOT NULL, author_name TEXT NOT NULL, author_team TEXT NOT NULL, created_at TEXT NOT NULL)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_comments_item_created ON comments (item_id, created_at)"),
-    env.DB.prepare("CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE, color TEXT NOT NULL DEFAULT 'neutral', created_by_name TEXT NOT NULL, created_by_team TEXT NOT NULL, created_at TEXT NOT NULL, archived_at TEXT)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, normalized_name TEXT NOT NULL UNIQUE, sort_order INTEGER NOT NULL DEFAULT 0, color TEXT NOT NULL DEFAULT 'neutral', created_by_name TEXT NOT NULL, created_by_team TEXT NOT NULL, created_at TEXT NOT NULL, archived_at TEXT)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_categories_active_name ON categories (archived_at, name)"),
     env.DB.prepare("INSERT OR IGNORE INTO categories (id, name, normalized_name, color, created_by_name, created_by_team, created_at) SELECT lower(hex(randomblob(16))), trim(category), lower(trim(category)), 'neutral', 'KLANG', 'ทีม', CURRENT_TIMESTAMP FROM items WHERE trim(category) != ''"),
     env.DB.prepare("UPDATE items SET version = 1 WHERE version IS NULL OR version < 1"),
     env.DB.prepare("UPDATE items SET created_by_name = 'KLANG', created_by_team = 'ทีม' WHERE created_by_name = ''"),
     env.DB.prepare("UPDATE items SET updated_by_name = created_by_name, updated_by_team = created_by_team WHERE updated_by_name = ''"),
   ]);
+  const categoryInfo = await env.DB.prepare("PRAGMA table_info(categories)").all<{ name: string }>();
+  const categoryNames = new Set(categoryInfo.results.map((column) => column.name));
+  for (const [name, definition] of categoryColumns) if (!categoryNames.has(name)) await env.DB.prepare(`ALTER TABLE categories ADD COLUMN ${name} ${definition}`).run();
   await env.DB.batch([
     env.DB.prepare("WITH ranked AS (SELECT id, name, normalized_name, ROW_NUMBER() OVER (PARTITION BY normalized_name ORDER BY created_at ASC, id ASC) AS position FROM categories) UPDATE items SET category = COALESCE((SELECT name FROM ranked WHERE ranked.normalized_name = lower(trim(items.category)) AND ranked.position = 1), category) WHERE EXISTS (SELECT 1 FROM ranked WHERE ranked.normalized_name = lower(trim(items.category)))"),
     env.DB.prepare("DELETE FROM categories WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY normalized_name ORDER BY created_at ASC, id ASC) AS position FROM categories) WHERE position > 1)"),
     env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_normalized_name_unique ON categories (normalized_name)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_categories_active_order ON categories (archived_at, sort_order)"),
+    env.DB.prepare("UPDATE categories SET sort_order = rowid WHERE sort_order = 0"),
+    env.DB.prepare("INSERT OR IGNORE INTO categories (id, name, normalized_name, sort_order, color, created_by_name, created_by_team, created_at) VALUES ('system-uncategorized', 'uncategorized', 'uncategorized', -1, 'neutral', 'KLANG', 'ทีม', CURRENT_TIMESTAMP), ('system-project', 'project', 'project', 10, 'neutral', 'KLANG', 'ทีม', CURRENT_TIMESTAMP), ('system-team', 'team', 'team', 20, 'neutral', 'KLANG', 'ทีม', CURRENT_TIMESTAMP), ('system-idea', 'idea', 'idea', 30, 'neutral', 'KLANG', 'ทีม', CURRENT_TIMESTAMP), ('system-reference', 'reference', 'reference', 40, 'neutral', 'KLANG', 'ทีม', CURRENT_TIMESTAMP)"),
   ]);
 
   const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM items").first<{
