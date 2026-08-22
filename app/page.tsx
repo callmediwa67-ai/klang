@@ -131,6 +131,7 @@ export default function Home() {
   const [events, setEvents] = useState<Event[]>([]);
   const [view, setView] = useState<ViewName>("inbox");
   const [query, setQuery] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [category, setCategory] = useState("all");
@@ -171,8 +172,9 @@ export default function Home() {
           setEvents(data.events ?? []);
         } else {
           const params = new URLSearchParams({ page: String(page), pageSize: "50" });
-          if (nextView === "trash") params.set("view", "trash");
-          if (query.trim()) params.set("q", query.trim());
+          params.set("view", nextView);
+          if (searchTerm.trim()) params.set("q", searchTerm.trim());
+          if (category !== "all") params.set("category", category);
           const response = await fetch(`/api/items?${params}`, {
             cache: "no-store",
           });
@@ -191,7 +193,7 @@ export default function Home() {
         setLoading(false);
       }
     },
-    [profile, view, query, page],
+    [profile, view, searchTerm, category, page],
   );
   useEffect(() => {
     try {
@@ -210,6 +212,10 @@ export default function Home() {
     if (profile) void load(view);
   }, [profile, view, load]);
   useEffect(() => {
+    const timer = window.setTimeout(() => setSearchTerm(query), 280);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+  useEffect(() => {
     if (modal === "item" && (isEditing || !editing)) {
       const timer = window.setTimeout(() => titleRef.current?.focus(), 40);
       return () => window.clearTimeout(timer);
@@ -218,28 +224,6 @@ export default function Home() {
   useEffect(() => { if (!profile) return; const refresh = () => { void load(view); }; const timer = window.setInterval(refresh, 20_000); return () => window.clearInterval(timer); }, [profile, view, load]);
   useEffect(() => { if (!profile) return; void fetch("/api/collaboration", { cache: "no-store" }).then((response) => response.json()).then((data: { tags?: Tag[] }) => setAllTags(data.tags ?? [])).catch(() => undefined); }, [profile]);
   useEffect(() => { if (!profile) return; void fetch("/api/categories", { cache: "no-store" }).then((response) => response.json()).then((data: { categories?: Array<{ name: string }> }) => setManagedCategories(data.categories ?? [])).catch(() => undefined); }, [profile]);
-  const filtered = useMemo(
-    () =>
-      items.filter((item) => {
-        if (view === "inbox" && !item.inbox) return false;
-        if (view === "favorites" && !item.favorite) return false;
-        if (category !== "all" && item.category !== category) return false;
-        return (
-          !query ||
-          [
-            item.title,
-            item.content,
-            item.url,
-            item.updatedByName,
-            item.updatedByTeam,
-          ]
-            .join(" ")
-            .toLowerCase()
-            .includes(query.trim().toLowerCase())
-        );
-      }),
-    [items, view, category, query],
-  );
   const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...managedCategories.map((category) => category.name), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [managedCategories, items, draft.category]);
   function toast(text: string) {
     setNotice(text);
@@ -526,7 +510,7 @@ export default function Home() {
                 <h1>
                   {views[view].label}{" "}
                   <span>
-                    {view === "activity" ? events.length : filtered.length}
+                    {view === "activity" ? events.length : items.length}
                   </span>
                 </h1>
               </div>
@@ -556,7 +540,7 @@ export default function Home() {
                   <button
                     className={category === "all" ? "selected" : ""}
                     type="button"
-                    onClick={() => setCategory("all")}
+                    onClick={() => { setCategory("all"); setPage(1); }}
                   >
                     ทั้งหมด
                   </button>
@@ -565,7 +549,7 @@ export default function Home() {
                       key={key}
                       className={category === key ? "selected" : ""}
                       type="button"
-                      onClick={() => setCategory(key)}
+                      onClick={() => { setCategory(key); setPage(1); }}
                     >
                       {label}
                     </button>
@@ -601,10 +585,10 @@ export default function Home() {
                   </article>
                 ))}
               </div>
-            ) : filtered.length ? (
+            ) : items.length ? (
               <>
               <div className="item-list">
-                {filtered.map((item) => (
+                {items.map((item) => (
                   <article
                     className={`vault-item ${busyId === item.id ? "busy" : ""}`}
                     key={item.id}
