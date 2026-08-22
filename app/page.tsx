@@ -210,8 +210,11 @@ export default function Home() {
     if (profile) void load(view);
   }, [profile, view, load]);
   useEffect(() => {
-    if (modal === "item") setTimeout(() => titleRef.current?.focus(), 40);
-  }, [modal]);
+    if (modal === "item" && (isEditing || !editing)) {
+      const timer = window.setTimeout(() => titleRef.current?.focus(), 40);
+      return () => window.clearTimeout(timer);
+    }
+  }, [editing, isEditing, modal]);
   useEffect(() => { if (!profile) return; const refresh = () => { void load(view); }; const timer = window.setInterval(refresh, 20_000); return () => window.clearInterval(timer); }, [profile, view, load]);
   useEffect(() => { if (!profile) return; void fetch("/api/collaboration", { cache: "no-store" }).then((response) => response.json()).then((data: { tags?: Tag[] }) => setAllTags(data.tags ?? [])).catch(() => undefined); }, [profile]);
   useEffect(() => { if (!profile) return; void fetch("/api/categories", { cache: "no-store" }).then((response) => response.json()).then((data: { categories?: Array<{ name: string }> }) => setManagedCategories(data.categories ?? [])).catch(() => undefined); }, [profile]);
@@ -941,10 +944,14 @@ export default function Home() {
               </div>
             ) : editing && !isEditing ? (
               <div className="reader-view">
-                <div className="reader-meta"><span>{types[editing.type].label}</span><span>{editing.category}</span><span>เวอร์ชัน {editing.version}</span></div>
+                <div className="reader-meta"><span>{types[editing.type].label}</span><span>{editing.category}</span><span>เวอร์ชัน {editing.version}</span>{editing.inbox ? <span>อยู่ใน Inbox</span> : null}{editing.favorite ? <span>รายการโปรด</span> : null}</div>
                 <h3>{editing.title}</h3>
                 {editing.type === "link" && editing.url ? <a className="reader-link" href={editing.url} target="_blank" rel="noreferrer">เปิดลิงก์ ↗</a> : null}
                 <div className="reader-content">{editing.content || "ไม่มีรายละเอียดเพิ่มเติม"}</div>
+                <dl className="reader-details">
+                  <div><dt>สร้างโดย</dt><dd>{editing.createdByName} · {editing.createdByTeam}<br />{formatDate(editing.createdAt)}</dd></div>
+                  <div><dt>แก้ไขล่าสุด</dt><dd>{editing.updatedByName} · {editing.updatedByTeam}<br />{formatDate(editing.updatedAt)}</dd></div>
+                </dl>
                 {itemTags.length ? <div className="reader-tags">{itemTags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</div> : null}
                 {attachments.length ? <div className="attachment-list"><span>ไฟล์แนบ</span>{attachments.map((attachment) => <a key={attachment.id} href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer">{attachment.filename}</a>)}</div> : null}
                 <div className="comments-panel"><strong>ความคิดเห็น</strong>{comments.map((comment) => <p key={comment.id}><b>{comment.authorName} · {comment.authorTeam}</b><span>{comment.body}</span></p>)}<div><input value={commentDraft} maxLength={2000} onChange={(event) => setCommentDraft(event.target.value)} placeholder="เขียนความคิดเห็น" /><button className="secondary-button" type="button" onClick={() => void addComment()}>ส่ง</button></div></div>
