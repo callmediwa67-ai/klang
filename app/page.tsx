@@ -59,6 +59,7 @@ type Attachment = {
 };
 type Tag = { id: string; name: string; color: string };
 type Comment = { id: string; body: string; authorName: string; authorTeam: string; createdAt: string };
+type ManagedCategory = { id: string; name: string; itemCount: number };
 type Event = {
   id: string;
   action: string;
@@ -145,10 +146,14 @@ export default function Home() {
   const [itemTags, setItemTags] = useState<Tag[]>([]);
   const [newTagName, setNewTagName] = useState("");
   const [customCategory, setCustomCategory] = useState("");
-  const [managedCategories, setManagedCategories] = useState<Array<{ name: string }>>([]);
+  const [managedCategories, setManagedCategories] = useState<ManagedCategory[]>([]);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [categoryRename, setCategoryRename] = useState<{ id: string; name: string } | null>(null);
+  const [categoryDelete, setCategoryDelete] = useState<string | null>(null);
+  const [replacementCategory, setReplacementCategory] = useState("uncategorized");
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentDraft, setCommentDraft] = useState("");
-  const [modal, setModal] = useState<"item" | "profile" | null>(null);
+  const [modal, setModal] = useState<"item" | "profile" | "categories" | null>(null);
   const [editing, setEditing] = useState<VaultItem | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [history, setHistory] = useState<Version[]>([]);
@@ -156,6 +161,7 @@ export default function Home() {
   const [isEditing, setIsEditing] = useState(false);
   const [conflict, setConflict] = useState<VaultItem | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const filterScrollRef = useRef<HTMLDivElement>(null);
   const load = useCallback(
     async (nextView = view) => {
       if (!profile) return;
@@ -223,11 +229,28 @@ export default function Home() {
   }, [editing, isEditing, modal]);
   useEffect(() => { if (!profile) return; const refresh = () => { void load(view); }; const timer = window.setInterval(refresh, 20_000); return () => window.clearInterval(timer); }, [profile, view, load]);
   useEffect(() => { if (!profile) return; void fetch("/api/collaboration", { cache: "no-store" }).then((response) => response.json()).then((data: { tags?: Tag[] }) => setAllTags(data.tags ?? [])).catch(() => undefined); }, [profile]);
-  useEffect(() => { if (!profile) return; void fetch("/api/categories", { cache: "no-store" }).then((response) => response.json()).then((data: { categories?: Array<{ name: string }> }) => setManagedCategories(data.categories ?? [])).catch(() => undefined); }, [profile]);
+  const refreshCategories = useCallback(async () => { const response = await fetch("/api/categories", { cache: "no-store" }); const data = await response.json() as { categories?: ManagedCategory[] }; if (!response.ok) throw new Error("เปิดหมวดหมู่ไม่สำเร็จ"); setManagedCategories(data.categories ?? []); }, []);
+  useEffect(() => { if (profile) void refreshCategories().catch(() => undefined); }, [profile, refreshCategories]);
   const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...managedCategories.map((category) => category.name), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [managedCategories, items, draft.category]);
   function toast(text: string) {
     setNotice(text);
     setTimeout(() => setNotice(""), 2600);
+  }
+  function openCategoryManager() {
+    setCategorySearch(""); setCategoryRename(null); setCategoryDelete(null); setReplacementCategory("uncategorized"); setModal("categories");
+  }
+  async function renameCategory() {
+    if (!profile || !categoryRename?.name.trim()) return;
+    const response = await fetch("/api/categories", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: categoryRename.id, name: categoryRename.name, actor: actor(profile) }) });
+    const data = await response.json() as { error?: string }; if (!response.ok) { setError(data.error || "เปลี่ยนชื่อหมวดหมู่ไม่สำเร็จ"); return; }
+    setCategoryRename(null); await refreshCategories(); await load(view); toast("เปลี่ยนชื่อหมวดหมู่แล้ว");
+  }
+  async function deleteCategory() {
+    if (!profile || !categoryDelete) return;
+    const response = await fetch("/api/categories", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: categoryDelete, replacementCategory, actor: actor(profile) }) });
+    const data = await response.json() as { error?: string }; if (!response.ok) { setError(data.error || "ลบหมวดหมู่ไม่สำเร็จ"); return; }
+    if (category !== "all" && category === managedCategories.find((item) => item.id === categoryDelete)?.name) setCategory("all");
+    setCategoryDelete(null); await refreshCategories(); await load(view); toast("ลบหมวดหมู่และย้ายรายการแล้ว");
   }
   async function restoreBackup(file: File | null) {
     if (!file || !profile) return;
@@ -347,7 +370,7 @@ export default function Home() {
     setBusyId(editing?.id ?? "new");
     setError("");
     try {
-      if (customCategory.trim() && profile) { const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: customCategory, actor: actor(profile) }) }); const data = await response.json() as { category?: { name: string } }; if (data.category) setManagedCategories((current) => current.some((category) => category.name === data.category!.name) ? current : [...current, data.category!]); }
+      if (customCategory.trim() && profile) { const response = await fetch("/api/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: customCategory, actor: actor(profile) }) }); const data = await response.json() as { category?: ManagedCategory }; if (data.category) setManagedCategories((current) => current.some((category) => category.name === data.category!.name) ? current : [...current, data.category!]); }
       const item = await write(
         editing ? "PATCH" : "POST",
         editing
@@ -536,7 +559,9 @@ export default function Home() {
                     </small>
                   </span>
                 </button>
-                <div className="filters">
+                <div className="filter-bar">
+                  <button className="filter-scroll-button" type="button" aria-label="เลื่อนหมวดหมู่ไปทางซ้าย" onClick={() => filterScrollRef.current?.scrollBy({ left: -220, behavior: "smooth" })}>‹</button>
+                <div className="filters" ref={filterScrollRef}>
                   <button
                     className={category === "all" ? "selected" : ""}
                     type="button"
@@ -554,6 +579,9 @@ export default function Home() {
                       {label}
                     </button>
                   ))}
+                </div>
+                  <button className="filter-scroll-button" type="button" aria-label="เลื่อนหมวดหมู่ไปทางขวา" onClick={() => filterScrollRef.current?.scrollBy({ left: 220, behavior: "smooth" })}>›</button>
+                  <button className="manage-categories-button" type="button" onClick={openCategoryManager}>จัดการหมวดหมู่</button>
                 </div>
               </>
             ) : null}
@@ -865,6 +893,26 @@ export default function Home() {
           </section>
         </div>
       ) : null}
+      {modal === "categories" ? (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.currentTarget === event.target) setModal(null); }}>
+          <section className="item-modal category-manager" role="dialog" aria-modal="true" aria-label="จัดการหมวดหมู่">
+            <header className="modal-header"><div><p className="eyebrow">จัดระเบียบคลัง</p><h2>จัดการหมวดหมู่</h2></div><button className="close-button" type="button" aria-label="ปิด" onClick={() => setModal(null)}>×</button></header>
+            <div className="category-manager-body">
+              <p>เปลี่ยนชื่อหรือลบหมวดหมู่ได้ การลบจะย้ายรายการเดิมไปยังหมวดที่คุณเลือกก่อนเสมอ</p>
+              <input className="category-search" type="search" value={categorySearch} onChange={(event) => setCategorySearch(event.target.value)} placeholder="ค้นหาหมวดหมู่" />
+              <div className="managed-category-list">
+                {managedCategories.filter((item) => item.name.toLocaleLowerCase("th").includes(categorySearch.trim().toLocaleLowerCase("th"))).map((item) => (
+                  <div className="managed-category-row" key={item.id}>
+                    {categoryRename?.id === item.id ? <><input value={categoryRename.name} maxLength={40} onChange={(event) => setCategoryRename({ id: item.id, name: event.target.value })} /><button className="secondary-button" type="button" onClick={() => void renameCategory()}>บันทึก</button><button className="ghost-button" type="button" onClick={() => setCategoryRename(null)}>ยกเลิก</button></> : categoryDelete === item.id ? <div className="category-delete-confirm"><strong>ลบ “{item.name}”?</strong><span>ย้าย {item.itemCount} รายการไป</span><select value={replacementCategory} onChange={(event) => setReplacementCategory(event.target.value)}><option value="uncategorized">ยังไม่จัดหมวดหมู่</option>{categoryOptions.filter(([key]) => key !== item.name && key !== "uncategorized").map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button className="danger-button" type="button" onClick={() => void deleteCategory()}>ลบและย้ายรายการ</button><button className="ghost-button" type="button" onClick={() => setCategoryDelete(null)}>ยกเลิก</button></div> : <><div><strong>{item.name}</strong><small>{item.itemCount} รายการ</small></div><div className="managed-category-actions"><button className="ghost-button" type="button" onClick={() => setCategoryRename({ id: item.id, name: item.name })}>เปลี่ยนชื่อ</button><button className="danger-button" type="button" onClick={() => { setCategoryDelete(item.id); setReplacementCategory("uncategorized"); }}>ลบ</button></div></>}
+                  </div>
+                ))}
+                {!managedCategories.filter((item) => item.name.toLocaleLowerCase("th").includes(categorySearch.trim().toLocaleLowerCase("th"))).length ? <p className="category-empty">ยังไม่พบหมวดหมู่</p> : null}
+              </div>
+              <footer className="modal-actions"><span /><button className="primary-button" type="button" onClick={() => setModal(null)}>เสร็จสิ้น</button></footer>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {modal === "item" ? (
         <div
           className="modal-backdrop"
@@ -1035,25 +1083,9 @@ export default function Home() {
                 {editing ? <div className="tag-panel"><strong>แท็ก</strong><div>{allTags.map((tag) => <label key={tag.id}><input type="checkbox" checked={itemTags.some((current) => current.id === tag.id)} onChange={(event) => { const ids = event.target.checked ? [...itemTags.map((current) => current.id), tag.id] : itemTags.filter((current) => current.id !== tag.id).map((current) => current.id); void saveTags(ids); }} /> {tag.name}</label>)}</div><div><input value={newTagName} maxLength={40} onChange={(event) => setNewTagName(event.target.value)} placeholder="สร้างแท็กใหม่" /><button className="secondary-button" type="button" onClick={() => void createTag()}>เพิ่มแท็ก</button></div></div> : null}
                 <label className="field">
                   <span>หมวดหมู่</span>
-                  <select
-                    value={draft.category}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        category: event.target.value,
-                      }))
-                    }
-                  >
-                    {categoryOptions.map(([key, label]) => (
-                      <option value={key} key={key}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
-                  <span>หรือสร้างหมวดใหม่</span>
-                  <input value={customCategory} maxLength={40} onChange={(event) => setCustomCategory(event.target.value)} placeholder="เช่น ลูกค้า, การตลาด, Sprint 1" />
+                  <input list="category-options" value={customCategory || categories[draft.category] || draft.category} maxLength={40} onChange={(event) => { const value = event.target.value; const match = categoryOptions.find(([key, label]) => key === value || label === value); if (match) { setDraft((current) => ({ ...current, category: match[0] })); setCustomCategory(""); } else { setCustomCategory(value); } }} placeholder="ค้นหาหรือสร้างหมวดหมู่" />
+                  <datalist id="category-options">{categoryOptions.map(([key, label]) => <option value={label} key={key} />)}</datalist>
+                  <small>พิมพ์เพื่อค้นหา หรือพิมพ์ชื่อใหม่เพื่อสร้างหมวดหมู่</small>
                 </label>
                 {error ? <p className="form-error">{error}</p> : null}
                 {editing ? (
