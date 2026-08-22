@@ -1,5 +1,5 @@
 import { and, asc, eq } from "drizzle-orm";
-import { ensureDatabase, getDb, getFiles } from "../../../db";
+import { ensureDatabase, getDb, getFiles, getRawDb } from "../../../db";
 import { attachments, items } from "../../../db/schema";
 
 const allowedTypes = new Set(["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/jpeg", "image/png", "image/webp", "image/gif"]);
@@ -29,4 +29,16 @@ export async function POST(request: Request) {
     const [attachment] = await getDb().insert(attachments).values({ id, itemId, objectKey, filename, contentType: file.type, size: file.size, uploadedByName: actor.name, uploadedByTeam: actor.team, createdAt: now }).returning();
     return Response.json({ attachment }, { status: 201 });
   } catch (reason) { console.error(reason); return fail("อัปโหลดไฟล์ไม่สำเร็จ", 500); }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    await ensureDatabase(); const payload = await request.json() as Record<string, unknown>; const id = clean(payload.id, 100); const rawActor = payload.actor as Record<string, unknown> | null;
+    const actor = { deviceId: clean(rawActor?.deviceId, 100), name: clean(rawActor?.name, 80), team: clean(rawActor?.team, 80) };
+    if (!actor.deviceId || !actor.name || !actor.team) return fail("กรุณาระบุชื่อและทีมก่อนลบไฟล์"); if (!id) return fail("ไม่พบไฟล์ที่ต้องการลบ");
+    const [file] = await getDb().select().from(attachments).where(eq(attachments.id, id)); if (!file) return fail("ไม่พบไฟล์", 404);
+    await getFiles().delete(file.objectKey); await getDb().delete(attachments).where(eq(attachments.id, id));
+    await getRawDb().prepare("INSERT INTO activity_events (id, action, entity_type, entity_id, summary, actor_device_id, actor_name, actor_team, created_at) VALUES (?, 'attachment_deleted', 'attachment', ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), file.id, `ลบไฟล์แนบ ${file.filename}`, actor.deviceId, actor.name, actor.team, new Date().toISOString()).run();
+    return Response.json({ ok: true });
+  } catch (reason) { console.error(reason); return fail("ลบไฟล์ไม่สำเร็จ", 500); }
 }

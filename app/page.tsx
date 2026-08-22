@@ -1,5 +1,5 @@
 "use client";
-/* eslint-disable react-hooks/set-state-in-effect, jsx-a11y/no-autofocus, jsx-a11y/no-static-element-interactions */
+/* eslint-disable react-hooks/set-state-in-effect, jsx-a11y/no-autofocus, jsx-a11y/no-static-element-interactions, @next/next/no-img-element */
 
 import {
   FormEvent,
@@ -141,7 +141,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [itemTags, setItemTags] = useState<Tag[]>([]);
   const [newTagName, setNewTagName] = useState("");
@@ -290,7 +290,7 @@ export default function Home() {
     setDraft({ ...emptyDraft, type });
     setHistory([]);
     setAttachments([]);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setCustomCategory("");
     setShowHistory(false);
     setIsEditing(true);
@@ -308,7 +308,7 @@ export default function Home() {
     });
     setHistory([]);
     setAttachments([]);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setCustomCategory("");
     setShowHistory(false);
     setIsEditing(false);
@@ -340,6 +340,15 @@ export default function Home() {
     if (!editing || !profile || !commentDraft.trim()) return;
     const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "comment", itemId: editing.id, body: commentDraft, actor: actor(profile) }) });
     const data = await response.json() as { comment?: Comment; error?: string }; if (!response.ok) { setError(data.error || "เพิ่มความคิดเห็นไม่สำเร็จ"); return; } setComments((current) => [...current, data.comment!]); setCommentDraft("");
+  }
+  async function deleteAttachment(attachment: Attachment) {
+    if (!profile || !confirm(`ลบไฟล์ “${attachment.filename}” ออกจากรายการนี้?`)) return;
+    setBusyId(attachment.id);
+    try {
+      const response = await fetch("/api/files", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: attachment.id, actor: actor(profile) }) });
+      const data = await response.json() as { error?: string }; if (!response.ok) throw new Error(data.error || "ลบไฟล์ไม่สำเร็จ");
+      setAttachments((current) => current.filter((item) => item.id !== attachment.id)); toast("ลบไฟล์แนบแล้ว");
+    } catch (reason) { setError(message(reason)); } finally { setBusyId(null); }
   }
   async function saveTags(tagIds: string[]) { if (!editing || !profile) return; const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_tags", itemId: editing.id, tagIds, actor: actor(profile) }) }); if (response.ok) setItemTags(allTags.filter((tag) => tagIds.includes(tag.id))); }
   async function createTag() { if (!profile || !newTagName.trim()) return; const response = await fetch("/api/collaboration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "create_tag", name: newTagName, actor: actor(profile) }) }); const data = await response.json() as { tag?: Tag }; if (data.tag) { setAllTags((current) => [...current, data.tag!]); setNewTagName(""); } }
@@ -378,27 +387,26 @@ export default function Home() {
           : { ...draft, category: customCategory.trim() || draft.category },
       );
       if (!item) throw new Error("บันทึกไม่สำเร็จ");
-      if (selectedFile && profile) {
-        const form = new FormData();
-        form.set("itemId", item.id);
-        form.set("file", selectedFile);
-        form.set("actor", JSON.stringify(actor(profile)));
-        const response = await fetch("/api/files", {
-          method: "POST",
-          body: form,
-        });
-        const data = (await response.json()) as { error?: string };
-        if (!response.ok) throw new Error(data.error || "อัปโหลดไฟล์ไม่สำเร็จ");
+      const uploaded: Attachment[] = [];
+      if (selectedFiles.length && profile) {
+        for (const selectedFile of selectedFiles) {
+          const form = new FormData(); form.set("itemId", item.id); form.set("file", selectedFile); form.set("actor", JSON.stringify(actor(profile)));
+          const response = await fetch("/api/files", { method: "POST", body: form });
+          const data = (await response.json()) as { attachment?: Attachment; error?: string };
+          if (!response.ok) throw new Error(data.error || "อัปโหลดไฟล์ไม่สำเร็จ");
+          if (data.attachment) uploaded.push(data.attachment);
+        }
       }
       setEditing(item);
       setDraft({ type: item.type, title: item.title, content: item.content, url: item.url, category: item.category });
-      setSelectedFile(null);
+      setAttachments((current) => [...current, ...uploaded]);
+      setSelectedFiles([]);
       setCustomCategory("");
       setIsEditing(false);
       await load(view);
       toast(
-        selectedFile
-          ? "บันทึกรายการและอัปโหลดไฟล์แล้ว"
+        selectedFiles.length
+          ? `บันทึกรายการและอัปโหลด ${selectedFiles.length} ไฟล์แล้ว`
           : editing
             ? "บันทึกการแก้ไขแล้ว"
             : "เพิ่มรายการเข้า Inbox แล้ว",
@@ -985,7 +993,7 @@ export default function Home() {
                   <div><dt>แก้ไขล่าสุด</dt><dd>{editing.updatedByName} · {editing.updatedByTeam}<br />{formatDate(editing.updatedAt)}</dd></div>
                 </dl>
                 {itemTags.length ? <div className="reader-tags">{itemTags.map((tag) => <span key={tag.id}>{tag.name}</span>)}</div> : null}
-                {attachments.length ? <div className="attachment-list"><span>ไฟล์แนบ</span>{attachments.map((attachment) => <a key={attachment.id} href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer">{attachment.filename}</a>)}</div> : null}
+                {attachments.length ? <div className="attachment-list"><span>ไฟล์แนบ {attachments.length} ไฟล์</span>{attachments.map((attachment) => <div className="attachment-row" key={attachment.id}>{attachment.contentType.startsWith("image/") ? <a className="image-preview" href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer"><img src={`/api/files?id=${attachment.id}`} alt={attachment.filename} /></a> : null}<a href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer"><strong>{attachment.filename}</strong><small>{Math.ceil(attachment.size / 1024)} KB · แนบโดย {attachment.uploadedByName} · {formatDate(attachment.createdAt)}</small></a></div>)}</div> : null}
                 <div className="comments-panel"><strong>ความคิดเห็น</strong>{comments.map((comment) => <p key={comment.id}><b>{comment.authorName} · {comment.authorTeam}</b><span>{comment.body}</span></p>)}<div><input value={commentDraft} maxLength={2000} onChange={(event) => setCommentDraft(event.target.value)} placeholder="เขียนความคิดเห็น" /><button className="secondary-button" type="button" onClick={() => void addComment()}>ส่ง</button></div></div>
                 <footer className="modal-actions"><button className="ghost-button" type="button" onClick={() => setModal(null)}>ปิด</button><div><button className="ghost-button" type="button" onClick={() => setShowHistory(true)}>ประวัติ</button><button className="primary-button" type="button" onClick={() => setIsEditing(true)}>แก้ไข</button></div></footer>
               </div>
@@ -1062,21 +1070,23 @@ export default function Home() {
                   />
                 </label>
                 <label className="field">
-                  <span>ไฟล์แนบ (PDF, Word หรือรูปภาพ; ไม่เกิน 15 MB)</span>
+                  <span>ไฟล์แนบ (PDF, Word หรือรูปภาพ; ไม่เกินไฟล์ละ 15 MB)</span>
                   <input
                     type="file"
+                    multiple
                     accept="application/pdf,.doc,.docx,image/jpeg,image/png,image/webp,image/gif"
-                    onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
+                    onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
                   />
-                  {selectedFile ? <small>{selectedFile.name}</small> : null}
+                  {selectedFiles.length ? <small>เตรียมอัปโหลด {selectedFiles.length} ไฟล์</small> : null}
                 </label>
                 {attachments.length ? (
                   <div className="attachment-list">
-                    <span>ไฟล์ที่แนบแล้ว</span>
+                    <span>ไฟล์ที่แนบแล้ว {attachments.length} ไฟล์</span>
                     {attachments.map((attachment) => (
-                      <a key={attachment.id} href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer">
-                        {attachment.filename} ({Math.ceil(attachment.size / 1024)} KB)
-                      </a>
+                      <div className="attachment-row" key={attachment.id}>
+                        <a href={`/api/files?id=${attachment.id}`} target="_blank" rel="noreferrer"><strong>{attachment.filename}</strong><small>{Math.ceil(attachment.size / 1024)} KB · {attachment.uploadedByName} · {formatDate(attachment.createdAt)}</small></a>
+                        <button className="danger-button" type="button" disabled={busyId === attachment.id} onClick={() => void deleteAttachment(attachment)}>ลบ</button>
+                      </div>
                     ))}
                   </div>
                 ) : null}
