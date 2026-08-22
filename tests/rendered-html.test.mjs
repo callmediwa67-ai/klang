@@ -22,6 +22,7 @@ test("server-renders the KLANG product shell", async () => {
   assert.match(html, /<title>KLANG/);
   assert.match(html, /คลังงานกลางของทีม/);
   assert.match(html, /เพิ่มรายการ/);
-  assert.match(html, /ค้นหาชื่อ เนื้อหา ลิงก์ หรือหมวด/);
+  assert.match(html, /ค้นหาชื่อ เนื้อหา ลิงก์ หรือคนที่แก้ไข/);
+  assert.match(html, /คุณชื่ออะไร อยู่ทีมไหน/);
   assert.doesNotMatch(html, /codex-preview|Building your site|react-loading-skeleton/);
 });

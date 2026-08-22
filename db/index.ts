@@ -3,15 +3,21 @@ import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
 
 let initialized = false;
+let lastMaintenanceAt = 0;
+
+const itemColumns: Array<[string, string]> = [
+  ["version", "INTEGER NOT NULL DEFAULT 1"], ["created_by_device_id", "TEXT NOT NULL DEFAULT ''"], ["created_by_name", "TEXT NOT NULL DEFAULT ''"], ["created_by_team", "TEXT NOT NULL DEFAULT ''"],
+  ["updated_by_device_id", "TEXT NOT NULL DEFAULT ''"], ["updated_by_name", "TEXT NOT NULL DEFAULT ''"], ["updated_by_team", "TEXT NOT NULL DEFAULT ''"],
+  ["deleted_at", "TEXT"], ["deleted_by_device_id", "TEXT"], ["deleted_by_name", "TEXT"], ["deleted_by_team", "TEXT"],
+];
 
 export async function ensureDatabase() {
-  if (initialized) return;
   if (!env.DB) {
     throw new Error("Cloudflare D1 binding `DB` is unavailable.");
   }
 
-  await env.DB.batch([
-    env.DB.prepare(`CREATE TABLE IF NOT EXISTS items (
+  if (!initialized) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS items (
       id TEXT PRIMARY KEY NOT NULL,
       type TEXT NOT NULL,
       title TEXT NOT NULL,
@@ -19,10 +25,17 @@ export async function ensureDatabase() {
       url TEXT NOT NULL DEFAULT '',
       category TEXT NOT NULL DEFAULT 'uncategorized',
       inbox INTEGER NOT NULL DEFAULT 1,
-      favorite INTEGER NOT NULL DEFAULT 0,
+      favorite INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1,
+      created_by_device_id TEXT NOT NULL DEFAULT '', created_by_name TEXT NOT NULL DEFAULT '', created_by_team TEXT NOT NULL DEFAULT '',
+      updated_by_device_id TEXT NOT NULL DEFAULT '', updated_by_name TEXT NOT NULL DEFAULT '', updated_by_team TEXT NOT NULL DEFAULT '',
+      deleted_at TEXT, deleted_by_device_id TEXT, deleted_by_name TEXT, deleted_by_team TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )`),
+    )`).run();
+  const columns = await env.DB.prepare("PRAGMA table_info(items)").all<{ name: string }>();
+  const names = new Set(columns.results.map((column) => column.name));
+  for (const [name, definition] of itemColumns) if (!names.has(name)) await env.DB.prepare(`ALTER TABLE items ADD COLUMN ${name} ${definition}`).run();
+  await env.DB.batch([
     env.DB.prepare(
       "CREATE INDEX IF NOT EXISTS idx_items_inbox_updated ON items (inbox, updated_at)",
     ),
@@ -32,6 +45,22 @@ export async function ensureDatabase() {
     env.DB.prepare(
       "CREATE INDEX IF NOT EXISTS idx_items_category ON items (category)",
     ),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_items_deleted_updated ON items (deleted_at, updated_at)"),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS item_versions (
+      id TEXT PRIMARY KEY NOT NULL, item_id TEXT NOT NULL, version_number INTEGER NOT NULL, type TEXT NOT NULL, title TEXT NOT NULL,
+      content TEXT NOT NULL DEFAULT '', url TEXT NOT NULL DEFAULT '', category TEXT NOT NULL, inbox INTEGER NOT NULL, favorite INTEGER NOT NULL,
+      deleted_at TEXT, actor_device_id TEXT NOT NULL, actor_name TEXT NOT NULL, actor_team TEXT NOT NULL, created_at TEXT NOT NULL
+    )`),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_item_versions_item_created ON item_versions (item_id, created_at)"),
+    env.DB.prepare(`CREATE TABLE IF NOT EXISTS activity_events (
+      id TEXT PRIMARY KEY NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL DEFAULT 'item', entity_id TEXT NOT NULL,
+      summary TEXT NOT NULL, actor_device_id TEXT NOT NULL, actor_name TEXT NOT NULL, actor_team TEXT NOT NULL, created_at TEXT NOT NULL
+    )`),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_activity_created ON activity_events (created_at)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY NOT NULL, window_start INTEGER NOT NULL, count INTEGER NOT NULL)"),
+    env.DB.prepare("UPDATE items SET version = 1 WHERE version IS NULL OR version < 1"),
+    env.DB.prepare("UPDATE items SET created_by_name = 'KLANG', created_by_team = 'ทีม' WHERE created_by_name = ''"),
+    env.DB.prepare("UPDATE items SET updated_by_name = created_by_name, updated_by_team = created_by_team WHERE updated_by_name = ''"),
   ]);
 
   const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM items").first<{
@@ -86,8 +115,19 @@ export async function ensureDatabase() {
     ]);
   }
 
-  await env.DB.prepare("PRAGMA optimize").run();
   initialized = true;
+  }
+  const nowMs = Date.now();
+  if (nowMs - lastMaintenanceAt > 12 * 60 * 60 * 1000) {
+    const expiry = new Date(nowMs - 30 * 24 * 60 * 60 * 1000).toISOString();
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM item_versions WHERE item_id IN (SELECT id FROM items WHERE deleted_at IS NOT NULL AND deleted_at < ?)").bind(expiry),
+      env.DB.prepare("DELETE FROM items WHERE deleted_at IS NOT NULL AND deleted_at < ?").bind(expiry),
+      env.DB.prepare("DELETE FROM rate_limits WHERE window_start < ?").bind(nowMs - 24 * 60 * 60 * 1000),
+      env.DB.prepare("PRAGMA optimize"),
+    ]);
+    lastMaintenanceAt = nowMs;
+  }
 }
 
 export function getDb() {
@@ -98,4 +138,9 @@ export function getDb() {
   }
 
   return drizzle(env.DB, { schema });
+}
+
+export function getRawDb() {
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  return env.DB;
 }
