@@ -140,6 +140,7 @@ export default function Home() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [lastSyncedAt, setLastSyncedAt] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -163,11 +164,11 @@ export default function Home() {
   const titleRef = useRef<HTMLInputElement>(null);
   const filterScrollRef = useRef<HTMLDivElement>(null);
   const load = useCallback(
-    async (nextView = view) => {
+    async (nextView = view, silent = false) => {
       if (!profile) return;
-      setLoading(true);
+      if (!silent) setLoading(true);
       try {
-        setError("");
+        if (!silent) setError("");
         if (nextView === "activity") {
           const response = await fetch("/api/activity", { cache: "no-store" });
           const data = (await response.json()) as {
@@ -193,10 +194,11 @@ export default function Home() {
           setItems(data.items ?? []);
           setHasMore(Boolean(data.hasMore));
         }
+        setLastSyncedAt(new Date().toISOString());
       } catch (reason) {
-        setError(message(reason));
+        if (!silent) setError(message(reason));
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     },
     [profile, view, searchTerm, category, page],
@@ -227,10 +229,38 @@ export default function Home() {
       return () => window.clearTimeout(timer);
     }
   }, [editing, isEditing, modal]);
-  useEffect(() => { if (!profile) return; const refresh = () => { void load(view); }; const timer = window.setInterval(refresh, 20_000); return () => window.clearInterval(timer); }, [profile, view, load]);
+  const refreshOpenItem = useCallback(async () => {
+    if (!editing || isEditing || modal !== "item") return;
+    try {
+      const [historyResponse, filesResponse, collaborationResponse] = await Promise.all([
+        fetch(`/api/items?id=${encodeURIComponent(editing.id)}&history=1`, { cache: "no-store" }),
+        fetch(`/api/files?itemId=${encodeURIComponent(editing.id)}`, { cache: "no-store" }),
+        fetch(`/api/collaboration?itemId=${encodeURIComponent(editing.id)}`, { cache: "no-store" }),
+      ]);
+      const historyData = await historyResponse.json() as { item?: VaultItem; versions?: Version[] };
+      const fileData = await filesResponse.json() as { attachments?: Attachment[] };
+      const collaborationData = await collaborationResponse.json() as { tags?: Tag[]; comments?: Comment[] };
+      if (historyResponse.ok && historyData.item) { setEditing(historyData.item); setHistory(historyData.versions ?? []); }
+      if (filesResponse.ok) setAttachments(fileData.attachments ?? []);
+      if (collaborationResponse.ok) { setItemTags(collaborationData.tags ?? []); setComments(collaborationData.comments ?? []); }
+    } catch { /* keep the currently readable version until the next live sync */ }
+  }, [editing, isEditing, modal]);
   useEffect(() => { if (!profile) return; void fetch("/api/collaboration", { cache: "no-store" }).then((response) => response.json()).then((data: { tags?: Tag[] }) => setAllTags(data.tags ?? [])).catch(() => undefined); }, [profile]);
   const refreshCategories = useCallback(async () => { const response = await fetch("/api/categories", { cache: "no-store" }); const data = await response.json() as { categories?: ManagedCategory[] }; if (!response.ok) throw new Error("เปิดหมวดหมู่ไม่สำเร็จ"); setManagedCategories(data.categories ?? []); }, []);
   useEffect(() => { if (profile) void refreshCategories().catch(() => undefined); }, [profile, refreshCategories]);
+  useEffect(() => {
+    if (!profile) return;
+    let refreshing = false;
+    const refresh = () => {
+      if (document.visibilityState === "hidden" || refreshing) return;
+      refreshing = true;
+      Promise.all([load(view, true), refreshOpenItem()]).finally(() => { refreshing = false; });
+    };
+    const onVisibilityChange = () => { if (document.visibilityState === "visible") refresh(); };
+    const timer = window.setInterval(refresh, 2_000);
+    window.addEventListener("visibilitychange", onVisibilityChange);
+    return () => { window.clearInterval(timer); window.removeEventListener("visibilitychange", onVisibilityChange); };
+  }, [profile, view, load, refreshOpenItem]);
   const categoryOptions = useMemo(() => Array.from(new Set([...Object.keys(categories), ...managedCategories.map((category) => category.name), ...items.map((item) => item.category), draft.category])).filter(Boolean).map((value) => [value, categories[value] ?? value] as const), [managedCategories, items, draft.category]);
   function toast(text: string) {
     setNotice(text);
@@ -523,7 +553,7 @@ export default function Home() {
               onChange={(event) => { setQuery(event.target.value); setPage(1); }}
               placeholder="ค้นหาชื่อ เนื้อหา ลิงก์ หรือคนที่แก้ไข"
             />
-            <kbd>Public</kbd>
+            <kbd className="live-status" title={lastSyncedAt ? `ซิงก์ล่าสุด ${formatDate(lastSyncedAt)}` : "กำลังเชื่อมต่อข้อมูลสด"}>● Live</kbd>
           </label>
           <button
             className="primary-button"

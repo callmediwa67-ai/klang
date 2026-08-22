@@ -36,6 +36,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .search-symbol { font-size: 19px; }
 .search-box input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--ink); background: transparent; }
 .search-box kbd { padding: 4px 7px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 10px; background: var(--paper); white-space: nowrap; }
+.search-box .live-status { border-color: #bbd69a; color: #376326; background: #eff8df; font-weight: 800; }
 .search-box button { width: 26px; height: 26px; border: 0; border-radius: 50%; color: var(--muted); background: var(--paper); cursor: pointer; }
 .primary-button { min-height: 48px; padding: 0 19px; border: 0; border-radius: 14px; color: white; background: var(--ink); font-weight: 730; cursor: pointer; transition: transform .18s ease, background .18s ease; }
 .primary-button:hover { transform: translateY(-1px); background: var(--forest); }
